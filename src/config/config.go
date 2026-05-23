@@ -55,6 +55,11 @@ type AppConfig struct {
 		Enabled    bool   `toml:"enabled"`
 		DefaultTTL string `toml:"defaultTTL"`
 	} `toml:"tokenCache"`
+
+	BlobCache struct {
+		Enabled bool   `toml:"enabled"`
+		Path    string `toml:"path"`
+	} `toml:"blobCache"`
 }
 
 var (
@@ -143,6 +148,13 @@ func DefaultConfig() *AppConfig {
 		}{
 			Enabled:    true,
 			DefaultTTL: "20m",
+		},
+		BlobCache: struct {
+			Enabled bool   `toml:"enabled"`
+			Path    string `toml:"path"`
+		}{
+			Enabled: false,
+			Path:    "./blob-cache",
 		},
 	}
 }
@@ -274,6 +286,15 @@ func overrideFromEnv(cfg *AppConfig) {
 		if maxImages, err := strconv.Atoi(val); err == nil && maxImages > 0 {
 			cfg.Download.MaxImages = maxImages
 		}
+	}
+
+	if val := os.Getenv("BLOB_CACHE_ENABLED"); val != "" {
+		if enabled, err := strconv.ParseBool(val); err == nil {
+			cfg.BlobCache.Enabled = enabled
+		}
+	}
+	if val := os.Getenv("BLOB_CACHE_PATH"); val != "" {
+		cfg.BlobCache.Path = val
 	}
 }
 

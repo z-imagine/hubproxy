@@ -105,6 +105,16 @@ func main() {
 	handlers.InitDebouncer()
 
 	cfg := config.GetConfig()
+	if cfg.BlobCache.Enabled {
+		bc, err := utils.InitBlobCache(cfg.BlobCache.Path)
+		if err != nil {
+			fmt.Printf("初始化Blob缓存失败: %v\n", err)
+		} else {
+			utils.GlobalBlobCache = bc
+			fmt.Printf("Blob缓存已启用: %s\n", cfg.BlobCache.Path)
+		}
+	}
+
 	router := buildRouter(cfg)
 
 	fmt.Printf("HubProxy 启动成功\n")

@@ -240,6 +240,21 @@ func handleManifestRequest(c *gin.Context, imageRef, reference string) {
 
 // handleBlobRequest 处理blob请求
 func handleBlobRequest(c *gin.Context, imageRef, digest string) {
+	// 磁盘缓存命中：直接读取返回
+	if utils.GlobalBlobCache != nil && utils.GlobalBlobCache.Exists(digest) {
+		reader, size, err := utils.GlobalBlobCache.Get(digest)
+		if err == nil {
+			defer reader.Close()
+			c.Header("Content-Type", "application/octet-stream")
+			c.Header("Content-Length", fmt.Sprintf("%d", size))
+			c.Header("Docker-Content-Digest", digest)
+			c.Status(http.StatusOK)
+			io.Copy(c.Writer, reader)
+			return
+		}
+		fmt.Printf("读取blob缓存失败: %v，回退到上游拉取\n", err)
+	}
+
 	digestRef, err := name.NewDigest(fmt.Sprintf("%s@%s", imageRef, digest))
 	if err != nil {
 		fmt.Printf("解析digest引用失败: %v\n", err)
@@ -272,10 +287,12 @@ func handleBlobRequest(c *gin.Context, imageRef, digest string) {
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Content-Length", fmt.Sprintf("%d", size))
 	c.Header("Docker-Content-Digest", digest)
-
 	c.Status(http.StatusOK)
-	if _, err := io.Copy(c.Writer, reader); err != nil {
-		fmt.Printf("复制layer内容失败: %v\n", err)
+
+	if utils.GlobalBlobCache != nil {
+		utils.GlobalBlobCache.PutAndStream(digest, reader, c.Writer)
+	} else {
+		io.Copy(c.Writer, reader)
 	}
 }
 
@@ -538,6 +555,21 @@ func handleUpstreamManifestRequest(c *gin.Context, imageRef, reference string, m
 
 // handleUpstreamBlobRequest 处理上游Registry的blob请求
 func handleUpstreamBlobRequest(c *gin.Context, imageRef, digest string, mapping config.RegistryMapping) {
+	// 磁盘缓存命中：直接读取返回
+	if utils.GlobalBlobCache != nil && utils.GlobalBlobCache.Exists(digest) {
+		reader, size, err := utils.GlobalBlobCache.Get(digest)
+		if err == nil {
+			defer reader.Close()
+			c.Header("Content-Type", "application/octet-stream")
+			c.Header("Content-Length", fmt.Sprintf("%d", size))
+			c.Header("Docker-Content-Digest", digest)
+			c.Status(http.StatusOK)
+			io.Copy(c.Writer, reader)
+			return
+		}
+		fmt.Printf("读取blob缓存失败: %v，回退到上游拉取\n", err)
+	}
+
 	digestRef, err := name.NewDigest(fmt.Sprintf("%s@%s", imageRef, digest))
 	if err != nil {
 		fmt.Printf("解析digest引用失败: %v\n", err)
@@ -571,10 +603,12 @@ func handleUpstreamBlobRequest(c *gin.Context, imageRef, digest string, mapping 
 	c.Header("Content-Type", "application/octet-stream")
 	c.Header("Content-Length", fmt.Sprintf("%d", size))
 	c.Header("Docker-Content-Digest", digest)
-
 	c.Status(http.StatusOK)
-	if _, err := io.Copy(c.Writer, reader); err != nil {
-		fmt.Printf("复制layer内容失败: %v\n", err)
+
+	if utils.GlobalBlobCache != nil {
+		utils.GlobalBlobCache.PutAndStream(digest, reader, c.Writer)
+	} else {
+		io.Copy(c.Writer, reader)
 	}
 }
 

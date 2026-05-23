@@ -7,6 +7,7 @@ services:
       - "5000:5000"
     volumes:
       - ./src/config.toml:/app/config.toml:ro
+      - ./blob-cache:/app/blob-cache
     logging:
       driver: json-file
       options:
