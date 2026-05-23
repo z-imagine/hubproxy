@@ -3,3 +3,4 @@
 .DS_Store
 /hubproxy*
 *.exe
+/blob-cache/
