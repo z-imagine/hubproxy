@@ -4,3 +4,5 @@
 /hubproxy*
 *.exe
 /blob-cache/
+.env
+/build/
