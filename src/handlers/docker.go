@@ -256,6 +256,7 @@ func handleBlobRequest(c *gin.Context, imageRef, digest string) {
 		fmt.Printf("读取blob缓存失败: %v，回退到上游拉取\n", err)
 	}
 
+	fmt.Printf("[blob MISS] %s 从上游拉取 (代理: %s)\n", digest, proxyStatus())
 	digestRef, err := name.NewDigest(fmt.Sprintf("%s@%s", imageRef, digest))
 	if err != nil {
 		fmt.Printf("解析digest引用失败: %v\n", err)
@@ -291,10 +292,12 @@ func handleBlobRequest(c *gin.Context, imageRef, digest string) {
 	c.Status(http.StatusOK)
 
 	if utils.GlobalBlobCache != nil {
-		utils.GlobalBlobCache.PutAndStream(digest, reader, c.Writer)
+		if _, err := utils.GlobalBlobCache.PutAndStream(digest, reader, c.Writer); err != nil {
+			fmt.Printf("Blob缓存写入失败: %v，回退到直接传输\n", err)
+			io.Copy(c.Writer, reader)
+		}
 	} else {
 		io.Copy(c.Writer, reader)
-				fmt.Printf("[blob HIT ] %s (磁盘缓存)\n", digest)
 	}
 }
 
@@ -610,10 +613,12 @@ func handleUpstreamBlobRequest(c *gin.Context, imageRef, digest string, mapping 
 	c.Status(http.StatusOK)
 
 	if utils.GlobalBlobCache != nil {
-		utils.GlobalBlobCache.PutAndStream(digest, reader, c.Writer)
+		if _, err := utils.GlobalBlobCache.PutAndStream(digest, reader, c.Writer); err != nil {
+			fmt.Printf("Blob缓存写入失败: %v，回退到直接传输\n", err)
+			io.Copy(c.Writer, reader)
+		}
 	} else {
 		io.Copy(c.Writer, reader)
-				fmt.Printf("[blob HIT ] %s (磁盘缓存)\n", digest)
 	}
 }
 

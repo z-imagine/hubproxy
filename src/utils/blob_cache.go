@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // BlobCache 磁盘 blob 缓存
@@ -30,8 +31,10 @@ func InitBlobCache(cacheDir string) (*BlobCache, error) {
 }
 
 // cachePath 返回 digest 对应的缓存文件路径
+// 将 digest 中的 ":" 替换为 "-"，兼容 FAT32/exFAT/NTFS 等不支持冒号的文件系统
 func (bc *BlobCache) cachePath(digest string) string {
-	return filepath.Join(bc.cacheDir, digest+".blob")
+	safeName := strings.ReplaceAll(digest, ":", "-")
+	return filepath.Join(bc.cacheDir, safeName+".blob")
 }
 
 // Exists 检查 digest 对应的缓存文件是否存在
