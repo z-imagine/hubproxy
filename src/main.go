@@ -117,6 +117,12 @@ func main() {
 
 	router := buildRouter(cfg)
 
+	if cfg.Access.Proxy != "" {
+		fmt.Printf("上游代理: %s\n", cfg.Access.Proxy)
+	} else {
+		fmt.Printf("上游代理: 未配置（直连）\n")
+	}
+
 	fmt.Printf("HubProxy 启动成功\n")
 	fmt.Printf("监听地址: %s:%d\n", cfg.Server.Host, cfg.Server.Port)
 	fmt.Printf("限流配置: %d请求/%g小时\n", cfg.RateLimit.RequestLimit, cfg.RateLimit.PeriodHours)

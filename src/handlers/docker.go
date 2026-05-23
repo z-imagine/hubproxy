@@ -250,6 +250,7 @@ func handleBlobRequest(c *gin.Context, imageRef, digest string) {
 			c.Header("Docker-Content-Digest", digest)
 			c.Status(http.StatusOK)
 			io.Copy(c.Writer, reader)
+				fmt.Printf("[blob HIT ] %s (磁盘缓存)\n", digest)
 			return
 		}
 		fmt.Printf("读取blob缓存失败: %v，回退到上游拉取\n", err)
@@ -293,6 +294,7 @@ func handleBlobRequest(c *gin.Context, imageRef, digest string) {
 		utils.GlobalBlobCache.PutAndStream(digest, reader, c.Writer)
 	} else {
 		io.Copy(c.Writer, reader)
+				fmt.Printf("[blob HIT ] %s (磁盘缓存)\n", digest)
 	}
 }
 
@@ -565,11 +567,13 @@ func handleUpstreamBlobRequest(c *gin.Context, imageRef, digest string, mapping 
 			c.Header("Docker-Content-Digest", digest)
 			c.Status(http.StatusOK)
 			io.Copy(c.Writer, reader)
+				fmt.Printf("[blob HIT ] %s (磁盘缓存)\n", digest)
 			return
 		}
 		fmt.Printf("读取blob缓存失败: %v，回退到上游拉取\n", err)
 	}
 
+		fmt.Printf("[blob MISS] %s 从上游拉取 (代理: %s)\n", digest, proxyStatus())
 	digestRef, err := name.NewDigest(fmt.Sprintf("%s@%s", imageRef, digest))
 	if err != nil {
 		fmt.Printf("解析digest引用失败: %v\n", err)
@@ -609,6 +613,7 @@ func handleUpstreamBlobRequest(c *gin.Context, imageRef, digest string, mapping 
 		utils.GlobalBlobCache.PutAndStream(digest, reader, c.Writer)
 	} else {
 		io.Copy(c.Writer, reader)
+				fmt.Printf("[blob HIT ] %s (磁盘缓存)\n", digest)
 	}
 }
 
@@ -653,4 +658,13 @@ func createUpstreamOptions(mapping config.RegistryMapping) []remote.Option {
 	}
 
 	return options
+}
+
+// proxyStatus 返回上游代理配置状态
+func proxyStatus() string {
+	cfg := config.GetConfig()
+	if cfg.Access.Proxy != "" {
+		return cfg.Access.Proxy
+	}
+	return "直连(无代理)"
 }
