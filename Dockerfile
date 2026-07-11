@@ -5,11 +5,11 @@ ARG VERSION=dev
 
 WORKDIR /app
 COPY src/go.mod src/go.sum ./
-RUN go mod download
+RUN GOPROXY=https://goproxy.cn,direct go mod download
 
 COPY src/ .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -ldflags="-s -w -X main.Version=${VERSION}" -trimpath -o hubproxy .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GOPROXY=https://goproxy.cn,direct go build -ldflags="-s -w -X main.Version=${VERSION}" -trimpath -o hubproxy .
 
 FROM alpine
 
