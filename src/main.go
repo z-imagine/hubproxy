@@ -106,7 +106,7 @@ func main() {
 
 	cfg := config.GetConfig()
 	if cfg.BlobCache.Enabled {
-		bc, err := utils.InitBlobCache(cfg.BlobCache.Path)
+		bc, err := utils.InitBlobCache(cfg.BlobCache.Path, cfg.BlobCache.ChunkSizeMB)
 		if err != nil {
 			fmt.Printf("初始化Blob缓存失败: %v\n", err)
 		} else {
@@ -135,7 +135,7 @@ func main() {
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
 		ReadTimeout:  60 * time.Second,
-		WriteTimeout: 30 * time.Minute,
+		WriteTimeout: 0, // 不限制，大 blob 下载可能超过 30 分钟
 		IdleTimeout:  120 * time.Second,
 	}
 

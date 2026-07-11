@@ -1,0 +1,21 @@
+# 预编译二进制（Docker 自行编译）
+src/hubproxy
+
+# 本地运行产生的缓存/产物
+src/blob-cache/
+src/build/
+
+# 备份目录
+baks/
+
+# Git
+.git/
+.gitattributes
+.gitignore
+.github/
+
+# 文档/许可证（非必要）
+LICENSE
+README.md
+install.sh
+packaging/

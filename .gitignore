@@ -2,7 +2,10 @@
 .vscode
 .DS_Store
 /hubproxy*
+src/hubproxy
 *.exe
 /blob-cache/
+src/blob-cache/
 .env
 /build/
+src/build/

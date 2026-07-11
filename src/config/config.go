@@ -57,8 +57,9 @@ type AppConfig struct {
 	} `toml:"tokenCache"`
 
 	BlobCache struct {
-		Enabled bool   `toml:"enabled"`
-		Path    string `toml:"path"`
+		Enabled     bool   `toml:"enabled"`
+		Path        string `toml:"path"`
+		ChunkSizeMB int    `toml:"chunkSizeMB"`
 	} `toml:"blobCache"`
 }
 
@@ -150,11 +151,13 @@ func DefaultConfig() *AppConfig {
 			DefaultTTL: "20m",
 		},
 		BlobCache: struct {
-			Enabled bool   `toml:"enabled"`
-			Path    string `toml:"path"`
+			Enabled     bool   `toml:"enabled"`
+			Path        string `toml:"path"`
+			ChunkSizeMB int    `toml:"chunkSizeMB"`
 		}{
-			Enabled: false,
-			Path:    "./blob-cache",
+			Enabled:     false,
+			Path:        "./blob-cache",
+			ChunkSizeMB: 100,
 		},
 	}
 }
@@ -278,7 +281,7 @@ func overrideFromEnv(cfg *AppConfig) {
 		cfg.Security.BlackList = append(cfg.Security.BlackList, strings.Split(val, ",")...)
 	}
 
-	if val, ok := os.LookupEnv("ACCESS_PROXY"); ok {
+	if val, ok := os.LookupEnv("VPN_PROXY"); ok {
 		cfg.Access.Proxy = strings.TrimSpace(val)
 	}
 
@@ -295,6 +298,11 @@ func overrideFromEnv(cfg *AppConfig) {
 	}
 	if val := os.Getenv("BLOB_CACHE_PATH"); val != "" {
 		cfg.BlobCache.Path = val
+	}
+	if val := os.Getenv("BLOB_CACHE_CHUNK_SIZE_MB"); val != "" {
+		if size, err := strconv.Atoi(val); err == nil && size > 0 {
+			cfg.BlobCache.ChunkSizeMB = size
+		}
 	}
 }
 

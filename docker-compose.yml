@@ -1,12 +1,15 @@
 services:
   hubproxy:
-    image: ghcr.io/sky22333/hubproxy
+    build: .
     container_name: hubproxy
     restart: always
     ports:
-      - "5000:5000"
+      - "15000:15000"
+    environment:
+      - VPN_PROXY=${VPN_PROXY-}
+      - SERVER_PORT=15000
+      - BLOB_CACHE_ENABLED=true
     volumes:
-      - ./src/config.toml:/app/config.toml:ro
       - ./blob-cache:/app/blob-cache
     logging:
       driver: json-file

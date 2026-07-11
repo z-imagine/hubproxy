@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"hubproxy/config"
 	"hubproxy/utils"
 )
@@ -255,7 +256,12 @@ func handleBlobRequest(c *gin.Context, imageRef, digest string) {
 		}
 		fmt.Printf("读取blob缓存失败: %v，回退到上游拉取\n", err)
 	}
-
+	// 磁盘缓存 MISS：分片下载
+	if utils.GlobalBlobCache != nil {
+		handleChunkedDownload(c, imageRef, digest)
+		return
+	}
+	// 缓存未启用：直接流式传输
 	fmt.Printf("[blob MISS] %s 从上游拉取 (代理: %s)\n", digest, proxyStatus())
 	digestRef, err := name.NewDigest(fmt.Sprintf("%s@%s", imageRef, digest))
 	if err != nil {
@@ -290,17 +296,128 @@ func handleBlobRequest(c *gin.Context, imageRef, digest string) {
 	c.Header("Content-Length", fmt.Sprintf("%d", size))
 	c.Header("Docker-Content-Digest", digest)
 	c.Status(http.StatusOK)
-
-	if utils.GlobalBlobCache != nil {
-		if _, err := utils.GlobalBlobCache.PutAndStream(digest, reader, c.Writer); err != nil {
-			fmt.Printf("Blob缓存写入失败: %v，回退到直接传输\n", err)
-			io.Copy(c.Writer, reader)
-		}
-	} else {
-		io.Copy(c.Writer, reader)
-	}
+	io.Copy(c.Writer, reader)
 }
 
+// handleChunkedDownload 分片下载 blob（支持断点续传）
+func handleChunkedDownload(c *gin.Context, imageRef, digest string) {
+	// 解析 registry 信息
+	repo, err := name.NewRepository(imageRef)
+	if err != nil {
+		fmt.Printf("解析 imageRef 失败: %v\n", err)
+		c.String(http.StatusBadRequest, "Invalid image reference")
+		return
+	}
+
+	reg := repo.Registry
+	scope := repo.Scope(transport.PullScope)
+	tr, err := transport.NewWithContext(
+		context.Background(),
+		reg,
+		authn.Anonymous,
+		utils.GetGlobalHTTPClient().Transport,
+		[]string{scope},
+	)
+	if err != nil {
+		fmt.Printf("创建 auth transport 失败: %v\n", err)
+		c.String(http.StatusInternalServerError, "Failed to create auth transport")
+		return
+	}
+	client := &http.Client{Transport: tr}
+
+	// 构造 blob URL
+	blobURL := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", reg.Scheme(), reg.RegistryStr(), repo.RepositoryStr(), digest)
+
+	// 检查是否存在断点（resume）或全新下载
+	meta, err := utils.GlobalBlobCache.LoadMeta(digest)
+	if err != nil {
+		fmt.Printf("加载 meta 失败: %v\n", err)
+		utils.GlobalBlobCache.CleanPartial(digest)
+	}
+
+	var missingChunks []int
+
+	if meta != nil {
+		fmt.Printf("[blob RESUME] %s, 已有 %d/%d 分片\n", digest, len(meta.DownloadedChunks), meta.TotalChunks)
+		missingChunks = utils.GlobalBlobCache.GetMissingChunks(meta)
+	} else {
+		// 全新下载：HEAD 获取总大小
+		headReq, err := http.NewRequest("HEAD", blobURL, nil)
+		if err != nil {
+			fmt.Printf("HEAD 请求创建失败: %v\n", err)
+			c.String(http.StatusInternalServerError, "Failed to create HEAD request")
+			return
+		}
+		headResp, err := client.Do(headReq)
+		if err != nil {
+			fmt.Printf("HEAD 请求失败: %v\n", err)
+			c.String(http.StatusBadGateway, "Failed to get blob info")
+			return
+		}
+		headResp.Body.Close()
+
+		if headResp.ContentLength <= 0 {
+			c.String(http.StatusBadGateway, "Cannot determine blob size")
+			return
+		}
+
+		meta = &utils.ChunkMeta{
+			Digest:    digest,
+			TotalSize: headResp.ContentLength,
+			ChunkSize: utils.GlobalBlobCache.ChunkSize(),
+			TotalChunks: int((headResp.ContentLength + utils.GlobalBlobCache.ChunkSize() - 1) / utils.GlobalBlobCache.ChunkSize()),
+		}
+
+		if err := utils.GlobalBlobCache.SaveMeta(meta); err != nil {
+			fmt.Printf("保存初始 meta 失败: %v\n", err)
+			c.String(http.StatusInternalServerError, "Failed to save meta")
+			return
+		}
+
+		fmt.Printf("[blob FRESH] %s, 总大小 %d bytes, %d 分片\n", digest, meta.TotalSize, meta.TotalChunks)
+		missingChunks = utils.GlobalBlobCache.GetMissingChunks(meta)
+	}
+
+	// 先设响应头，准备边下边流向客户端
+	c.Header("Content-Type", "application/octet-stream")
+	c.Header("Content-Length", fmt.Sprintf("%d", meta.TotalSize))
+	c.Header("Docker-Content-Digest", digest)
+	c.Status(http.StatusOK)
+
+	// 续传：先把已完成分片从磁盘流给客户端
+	if len(missingChunks) < meta.TotalChunks {
+		fmt.Printf("[blob STREAM] %s, 先流已有分片...\n", digest)
+		if err := utils.GlobalBlobCache.StreamParts(digest, meta, c.Writer); err != nil {
+			fmt.Printf("流式发送已有分片失败: %v\n", err)
+			return
+		}
+	}
+
+	// 逐分片下载并流给客户端
+	for _, chunkIdx := range missingChunks {
+		fmt.Printf("[chunk %d/%d] 开始下载...\n", chunkIdx+1, meta.TotalChunks)
+		if err := utils.GlobalBlobCache.DownloadChunkStreamed(client, blobURL, chunkIdx, meta, c.Writer); err != nil {
+			fmt.Printf("分片 %d 下载失败: %v\n", chunkIdx, err)
+			_ = utils.GlobalBlobCache.SaveMeta(meta)
+			return
+		}
+		meta.DownloadedChunks = append(meta.DownloadedChunks, chunkIdx)
+		if err := utils.GlobalBlobCache.SaveMeta(meta); err != nil {
+			fmt.Printf("更新 meta 失败: %v\n", err)
+		}
+	}
+
+	fmt.Printf("[blob DONE] %s, 全部分片下载完成, 后台拼接...\n", digest)
+
+	// 后台拼接 + 清理（不阻塞响应）
+	go func() {
+		if err := utils.GlobalBlobCache.AssembleBlob(digest, meta); err != nil {
+			fmt.Printf("后台拼接失败: %v\n", err)
+			return
+		}
+		utils.GlobalBlobCache.CleanupChunks(digest, meta)
+	}()
+}
 // handleTagsRequest 处理tags列表请求
 func handleTagsRequest(c *gin.Context, imageRef string) {
 	repo, err := name.NewRepository(imageRef)
@@ -576,7 +693,13 @@ func handleUpstreamBlobRequest(c *gin.Context, imageRef, digest string, mapping 
 		fmt.Printf("读取blob缓存失败: %v，回退到上游拉取\n", err)
 	}
 
-		fmt.Printf("[blob MISS] %s 从上游拉取 (代理: %s)\n", digest, proxyStatus())
+	// 磁盘缓存 MISS：分片下载
+	if utils.GlobalBlobCache != nil {
+		handleChunkedDownload(c, imageRef, digest)
+		return
+	}
+	// 缓存未启用：直接流式传输
+	fmt.Printf("[blob MISS] %s 从上游拉取 (代理: %s)\n", digest, proxyStatus())
 	digestRef, err := name.NewDigest(fmt.Sprintf("%s@%s", imageRef, digest))
 	if err != nil {
 		fmt.Printf("解析digest引用失败: %v\n", err)
@@ -611,15 +734,7 @@ func handleUpstreamBlobRequest(c *gin.Context, imageRef, digest string, mapping 
 	c.Header("Content-Length", fmt.Sprintf("%d", size))
 	c.Header("Docker-Content-Digest", digest)
 	c.Status(http.StatusOK)
-
-	if utils.GlobalBlobCache != nil {
-		if _, err := utils.GlobalBlobCache.PutAndStream(digest, reader, c.Writer); err != nil {
-			fmt.Printf("Blob缓存写入失败: %v，回退到直接传输\n", err)
-			io.Copy(c.Writer, reader)
-		}
-	} else {
-		io.Copy(c.Writer, reader)
-	}
+	io.Copy(c.Writer, reader)
 }
 
 // handleUpstreamTagsRequest 处理上游Registry的tags请求
