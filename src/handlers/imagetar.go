@@ -481,7 +481,8 @@ func (is *ImageStreamer) streamDockerFormatWithReturn(ctx context.Context, tarWr
 			return err
 		}
 
-		log.Printf("已处理层 %d/%d", i+1, len(layers))
+		layerDigest, _ := layer.Digest()
+		log.Printf("[LAYER %d/%d] digest=%s size=%d", i+1, len(layers), layerDigest.String(), layerSize)
 	}
 
 	singleManifest := map[string]interface{}{
@@ -781,7 +782,12 @@ func handleDirectImageDownload(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	log.Printf("下载镜像: %s (平台: %s)", req.Image, formatPlatformText(req.Platform))
+	cfg := config.GetConfig()
+	proxyInfo := "直连(无代理)"
+	if cfg.Access.Proxy != "" {
+		proxyInfo = cfg.Access.Proxy
+	}
+	log.Printf("⬇️  [IMAGE DOWNLOAD] image=%s platform=%s proxy=%s upstream=docker.io", req.Image, formatPlatformText(req.Platform), proxyInfo)
 
 	if err := globalImageStreamer.StreamImageToGin(ctx, req.Image, c, options); err != nil {
 		log.Printf("镜像下载失败: %v", err)
