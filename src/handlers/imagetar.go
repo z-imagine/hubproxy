@@ -476,13 +476,12 @@ func (is *ImageStreamer) streamDockerFormatWithReturn(ctx context.Context, tarWr
 				return err
 			}
 
+			log.Printf("[LAYER %d/%d] digest=%s size=%d", i+1, len(layers), digest.String(), layerSize)
 			return nil
 		}(); err != nil {
 			return err
 		}
 
-		layerDigest, _ := layer.Digest()
-		log.Printf("[LAYER %d/%d] digest=%s size=%d", i+1, len(layers), layerDigest.String(), layerSize)
 	}
 
 	singleManifest := map[string]interface{}{
