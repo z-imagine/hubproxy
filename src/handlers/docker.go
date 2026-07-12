@@ -397,7 +397,7 @@ func handleChunkedDownload(c *gin.Context, imageRef, digest string) {
 
 	// 逐分片下载并流给客户端
 	for _, chunkIdx := range missingChunks {
-		fmt.Printf("[chunk %d/%d] 开始下载...\n", chunkIdx+1, meta.TotalChunks)
+			log.Printf("[BLOB CHUNK %d/%d] 开始下载...\n", chunkIdx+1, meta.TotalChunks)
 		if err := utils.GlobalBlobCache.DownloadChunkStreamed(client, blobURL, chunkIdx, meta, c.Writer); err != nil {
 			fmt.Printf("分片 %d 下载失败: %v\n", chunkIdx, err)
 			_ = utils.GlobalBlobCache.SaveMeta(meta)
