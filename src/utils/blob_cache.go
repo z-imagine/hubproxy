@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"io"
 	"net/http"
 	"os"
@@ -203,7 +204,7 @@ func (bc *BlobCache) DownloadChunkStreamed(client *http.Client, blobURL string, 
 		return fmt.Errorf("分片 %d rename 失败: %w", chunkIndex, err)
 	}
 
-	fmt.Printf("[chunk %d/%d] 下载完成 (%d bytes)\n", chunkIndex+1, meta.TotalChunks, written)
+	log.Printf("[BLOB CHUNK %d/%d] 下载完成 (%d bytes)\n", chunkIndex+1, meta.TotalChunks, written)
 	return nil
 }
 
@@ -269,7 +270,7 @@ func (bc *BlobCache) AssembleBlob(digest string, meta *ChunkMeta) error {
 		return fmt.Errorf("rename 最终文件失败: %w", err)
 	}
 
-	fmt.Printf("Blob 拼接完成: %s (%d bytes, %d 分片)\n", digest, meta.TotalSize, meta.TotalChunks)
+	log.Printf("[BLOB ASSEMBLE] %s 拼接完成 (%d bytes, %d 分片)\n", digest, meta.TotalSize, meta.TotalChunks)
 	return nil
 }
 
@@ -279,7 +280,7 @@ func (bc *BlobCache) CleanupChunks(digest string, meta *ChunkMeta) {
 		os.Remove(bc.partPath(digest, i))
 	}
 	os.Remove(bc.metaPath(digest))
-	fmt.Printf("分片临时文件已清理: %s\n", digest)
+	log.Printf("[BLOB CLEANUP] 临时分片已清理: %s\n", digest)
 }
 
 // CleanPartial 删除分片残留（上游不支持 Range 等异常情况）

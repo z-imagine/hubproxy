@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -246,15 +247,15 @@ func handleBlobRequest(c *gin.Context, imageRef, digest string) {
 		reader, size, err := utils.GlobalBlobCache.Get(digest)
 		if err == nil {
 			defer reader.Close()
+			log.Printf("🚀 [BLOB CACHE HIT] digest=%s size=%d (磁盘缓存，直接返回)\n", digest, size)
 			c.Header("Content-Type", "application/octet-stream")
 			c.Header("Content-Length", fmt.Sprintf("%d", size))
 			c.Header("Docker-Content-Digest", digest)
 			c.Status(http.StatusOK)
 			io.Copy(c.Writer, reader)
-				fmt.Printf("[blob HIT ] %s (磁盘缓存)\n", digest)
 			return
 		}
-		fmt.Printf("读取blob缓存失败: %v，回退到上游拉取\n", err)
+		log.Printf("❌ [BLOB CACHE ERR] 读取缓存失败: %v，回退上游拉取\n", err)
 	}
 	// 磁盘缓存 MISS：分片下载
 	if utils.GlobalBlobCache != nil {
@@ -262,7 +263,7 @@ func handleBlobRequest(c *gin.Context, imageRef, digest string) {
 		return
 	}
 	// 缓存未启用：直接流式传输
-	fmt.Printf("[blob MISS] %s 从上游拉取 (代理: %s)\n", digest, proxyStatus())
+	log.Printf("⬇️  [BLOB CACHE MISS] digest=%s image=%s proxy=%s upstream=直接流式(无缓存)", digest, imageRef, proxyStatus())
 	digestRef, err := name.NewDigest(fmt.Sprintf("%s@%s", imageRef, digest))
 	if err != nil {
 		fmt.Printf("解析digest引用失败: %v\n", err)
@@ -327,6 +328,7 @@ func handleChunkedDownload(c *gin.Context, imageRef, digest string) {
 
 	// 构造 blob URL
 	blobURL := fmt.Sprintf("%s://%s/v2/%s/blobs/%s", reg.Scheme(), reg.RegistryStr(), repo.RepositoryStr(), digest)
+	log.Printf("⬇️  [BLOB UPSTREAM] %s proxy=%s", blobURL, proxyStatus())
 
 	// 检查是否存在断点（resume）或全新下载
 	meta, err := utils.GlobalBlobCache.LoadMeta(digest)
@@ -338,7 +340,7 @@ func handleChunkedDownload(c *gin.Context, imageRef, digest string) {
 	var missingChunks []int
 
 	if meta != nil {
-		fmt.Printf("[blob RESUME] %s, 已有 %d/%d 分片\n", digest, len(meta.DownloadedChunks), meta.TotalChunks)
+		log.Printf("[BLOB RESUME] %s, 已有 %d/%d 分片\n", digest, len(meta.DownloadedChunks), meta.TotalChunks)
 		missingChunks = utils.GlobalBlobCache.GetMissingChunks(meta)
 	} else {
 		// 全新下载：HEAD 获取总大小
@@ -374,7 +376,7 @@ func handleChunkedDownload(c *gin.Context, imageRef, digest string) {
 			return
 		}
 
-		fmt.Printf("[blob FRESH] %s, 总大小 %d bytes, %d 分片\n", digest, meta.TotalSize, meta.TotalChunks)
+		log.Printf("[BLOB FRESH] %s, 总大小 %d bytes, %d 分片\n", digest, meta.TotalSize, meta.TotalChunks)
 		missingChunks = utils.GlobalBlobCache.GetMissingChunks(meta)
 	}
 
@@ -386,7 +388,7 @@ func handleChunkedDownload(c *gin.Context, imageRef, digest string) {
 
 	// 续传：先把已完成分片从磁盘流给客户端
 	if len(missingChunks) < meta.TotalChunks {
-		fmt.Printf("[blob STREAM] %s, 先流已有分片...\n", digest)
+		log.Printf("[BLOB STREAM] %s, 先流已有分片...\n", digest)
 		if err := utils.GlobalBlobCache.StreamParts(digest, meta, c.Writer); err != nil {
 			fmt.Printf("流式发送已有分片失败: %v\n", err)
 			return
@@ -407,7 +409,7 @@ func handleChunkedDownload(c *gin.Context, imageRef, digest string) {
 		}
 	}
 
-	fmt.Printf("[blob DONE] %s, 全部分片下载完成, 后台拼接...\n", digest)
+	log.Printf("[BLOB DONE] %s, 全部分片下载完成, 后台拼接...\n", digest)
 
 	// 后台拼接 + 清理（不阻塞响应）
 	go func() {
@@ -682,15 +684,15 @@ func handleUpstreamBlobRequest(c *gin.Context, imageRef, digest string, mapping 
 		reader, size, err := utils.GlobalBlobCache.Get(digest)
 		if err == nil {
 			defer reader.Close()
+			log.Printf("🚀 [BLOB CACHE HIT] digest=%s size=%d (磁盘缓存，直接返回)\n", digest, size)
 			c.Header("Content-Type", "application/octet-stream")
 			c.Header("Content-Length", fmt.Sprintf("%d", size))
 			c.Header("Docker-Content-Digest", digest)
 			c.Status(http.StatusOK)
 			io.Copy(c.Writer, reader)
-				fmt.Printf("[blob HIT ] %s (磁盘缓存)\n", digest)
 			return
 		}
-		fmt.Printf("读取blob缓存失败: %v，回退到上游拉取\n", err)
+		log.Printf("❌ [BLOB CACHE ERR] 读取缓存失败: %v，回退上游拉取\n", err)
 	}
 
 	// 磁盘缓存 MISS：分片下载
@@ -699,7 +701,7 @@ func handleUpstreamBlobRequest(c *gin.Context, imageRef, digest string, mapping 
 		return
 	}
 	// 缓存未启用：直接流式传输
-	fmt.Printf("[blob MISS] %s 从上游拉取 (代理: %s)\n", digest, proxyStatus())
+	log.Printf("⬇️  [BLOB CACHE MISS] digest=%s image=%s proxy=%s upstream=直接流式(无缓存)", digest, imageRef, proxyStatus())
 	digestRef, err := name.NewDigest(fmt.Sprintf("%s@%s", imageRef, digest))
 	if err != nil {
 		fmt.Printf("解析digest引用失败: %v\n", err)
