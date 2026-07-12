@@ -10,7 +10,7 @@ services:
       - SERVER_PORT=15000
       - BLOB_CACHE_ENABLED=true
     volumes:
-      - ./blob-cache:/app/blob-cache
+      - ${BLOB_CACHE_HOST_PATH:-./blob-cache}:/app/blob-cache
     logging:
       driver: json-file
       options:

@@ -84,7 +84,7 @@ func DefaultConfig() *AppConfig {
 			EnableFrontend bool   `toml:"enableFrontend"`
 		}{
 			Host:           "0.0.0.0",
-			Port:           5000,
+			Port:           15000,
 			FileSize:       2 * 1024 * 1024 * 1024,
 			EnableH2C:      false,
 			EnableFrontend: true,
@@ -155,7 +155,7 @@ func DefaultConfig() *AppConfig {
 			Path        string `toml:"path"`
 			ChunkSizeMB int    `toml:"chunkSizeMB"`
 		}{
-			Enabled:     false,
+			Enabled:     true,
 			Path:        "./blob-cache",
 			ChunkSizeMB: 100,
 		},

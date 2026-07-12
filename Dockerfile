@@ -11,7 +11,7 @@ COPY src/ .
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GOPROXY=https://goproxy.cn,direct go build -ldflags="-s -w -X main.Version=${VERSION}" -trimpath -o hubproxy .
 
-FROM alpine
+FROM alpine:3.24.1
 
 WORKDIR /app
 
